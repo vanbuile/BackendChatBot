@@ -1,256 +1,169 @@
-# Node.js Chatbot Backend
+# Backend Chatbot Setup
 
-A Node.js backend server that acts as an intermediary between a chatbot frontend and Google Gemini API, with message history storage in MongoDB.
+Backend Node.js + Express cho chatbot, tích hợp Gemini API, lưu lịch sử chat vào MongoDB, hỗ trợ upload file lên Cloudinary khi gửi tin nhắn kèm tệp.
 
-## Prerequisites
+- Frontend repo: https://github.com/vanbuile/FrontendChatBot.git
+- Production: https://frontend-chat-bot-phi.vercel.app/
 
-- Node.js (v14+)
-- MongoDB (local or cloud instance)
-- Google Gemini API key
+## 1. Yêu cầu trước khi chạy
 
-## Installation
+- Node.js 18+ (khuyến nghị dùng bản LTS mới)
+- MongoDB local hoặc MongoDB Atlas
+- Gemini API key
+- Cloudinary account (chỉ bắt buộc khi gửi file)
 
-1. Install dependencies:
+## 2. Cài đặt project
 
 ```bash
 npm install
 ```
 
-2. Create a `.env` file with the following variables:
+## 3. Cấu hình môi trường
 
-```
+Tạo file `.env` từ `.env.example` rồi cập nhật giá trị thực tế.
+
+### Mẫu cấu hình tối thiểu
+
+```env
 PORT=5000
 NODE_ENV=development
 
-# MongoDB Configuration
-MONGODB_URI=mongodb://localhost:27017/chatbot_db
+# MongoDB
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster-url>/<db-name>?retryWrites=true&w=majority&appName=<app-name>
 
-# Gemini API Configuration
-GEMINI_API_KEY=your_gemini_api_key_here
+# Gemini
+GEMINI_API_KEY=<your_gemini_api_key>
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_BACKUP_MODELS=gemini-3.1-flash-lite,gemini-2.5-flash-lite
+
+# Cloudinary (bắt buộc nếu upload file)
+CLOUDINARY_CLOUD_NAME=<your_cloudinary_cloud_name>
+CLOUDINARY_API_KEY=<your_cloudinary_api_key>
+CLOUDINARY_API_SECRET=<your_cloudinary_api_secret>
 ```
 
-### Get Gemini API Key
+### Lấy Gemini API key
 
-1. Go to [Google AI Studio](https://aistudio.google.com/)
-2. Click "Create API key"
-3. Copy your API key and paste it in `.env` file
+1. Vào https://aistudio.google.com/
+2. Tạo API key
+3. Gán vào `GEMINI_API_KEY`
 
-### Setup MongoDB
+### Cấu hình MongoDB
 
-**Option 1: Local MongoDB**
+- Local: `mongodb://localhost:27017/chatbot_db`
+- Atlas: dùng connection string từ dashboard Atlas
 
-```bash
-# Install MongoDB locally and start the service
-mongod
-```
+## 4. Chạy backend
 
-**Option 2: MongoDB Atlas (Cloud)**
-
-1. Visit [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
-2. Create a free account and cluster
-3. Get your connection string and update `MONGODB_URI` in `.env`
-
-## Running the Server
-
-### Development mode (with hot reload):
+### Development (hot reload)
 
 ```bash
 npm run dev
 ```
 
-### Production mode:
+### Production
 
 ```bash
 npm start
 ```
 
-The server will start on `http://localhost:5000`
+Mặc định server chạy tại `http://localhost:5000`.
 
-## API Endpoints
+Khi chạy thành công, terminal thường có log tương tự:
 
-### 1. Health Check
-
-```
-GET /api/health
-```
-
-Returns server and service status.
-
-### 2. Send Message to Chatbot
-
-```
-POST /api/messages
-
-Request body:
-{
-  "userMessage": "Hello, how are you?",
-  "sessionId": "user_session_123"
-}
-
-Response:
-{
-  "success": true,
-  "data": {
-    "_id": "...",
-    "sessionId": "user_session_123",
-    "userMessage": "Hello, how are you?",
-    "botMessage": "I'm doing well, thank you for asking!",
-    "timestamp": "2024-03-23T10:30:00.000Z"
-  }
-}
+```text
+✓ MongoDB connected successfully
+✓ Gemini AI initialized with model: ...
+✓ Server running on http://localhost:5000
 ```
 
-### 3. Get Chat History
+## 5. API chính
 
-```
-GET /api/messages?sessionId=user_session_123&limit=50&skip=0
+### 5.1 Kiểm tra trạng thái
 
-Query Parameters:
-- sessionId (required): The session ID to fetch messages for
-- limit (optional): Number of messages to fetch (default: 50)
-- skip (optional): Number of messages to skip (default: 0)
+- `GET /`
+- `GET /api/health`
 
-Response:
-{
-  "success": true,
-  "data": {
-    "sessionId": "user_session_123",
-    "total": 10,
-    "count": 10,
-    "limit": 50,
-    "skip": 0,
-    "messages": [
-      {
-        "_id": "...",
-        "sessionId": "user_session_123",
-        "userMessage": "Hello",
-        "botMessage": "Hi there!",
-        "timestamp": "2024-03-23T10:30:00.000Z"
-      }
-    ]
-  }
-}
-```
+### 5.2 Gửi tin nhắn
 
-## Project Structure
+- `POST /api/messages`
+- Hỗ trợ:
 
-```
-src/
-├── server.js                 # Main server file
-├── config/
-│   └── db.js                # MongoDB connection
-├── models/
-│   └── Message.js           # Message schema
-├── routes/
-│   └── messageRoutes.js      # Message API routes
-└── services/
-    └── geminiService.js      # Gemini API integration
-.env                          # Environment variables
-.gitignore                    # Git ignore file
-package.json                  # Project dependencies
-README.md                      # This file
-```
+1. Text only
+2. Text + file
+3. Chỉ file (không có text)
 
-## Technologies Used
+Lưu ý:
 
-- **Express.js** - Web framework
-- **MongoDB** - NoSQL database
-- **Mongoose** - MongoDB ODM
-- **Google Generative AI** - Gemini API integration
-- **CORS** - Cross-origin resource sharing
-- **dotenv** - Environment variables
-- **axios** - HTTP client
-- **nodemon** - Development tool
+1. Dữ liệu lưu theo `sessionId = "default"` (hard-coded ở backend hiện tại)
+2. Field text đang dùng là `content` (không phải `userMessage`)
 
-## Example Usage
-
-### Frontend Integration (JavaScript)
-
-```javascript
-// Send message to chatbot
-async function sendMessage() {
-  const userMessage = "What is the weather like?";
-  const sessionId = "user_123"; // Unique session ID for each user
-
-  try {
-    const response = await fetch("http://localhost:5000/api/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        userMessage,
-        sessionId,
-      }),
-    });
-
-    const data = await response.json();
-    if (data.success) {
-      console.log("Bot response:", data.data.botMessage);
-    }
-  } catch (error) {
-    console.error("Error:", error);
-  }
-}
-
-// Get chat history
-async function getChatHistory() {
-  const sessionId = "user_123";
-
-  try {
-    const response = await fetch(
-      `http://localhost:5000/api/messages?sessionId=${sessionId}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    const data = await response.json();
-    if (data.success) {
-      console.log("Chat history:", data.data.messages);
-    }
-  } catch (error) {
-    console.error("Error:", error);
-  }
-}
-```
-
-## Testing the APIs
-
-### Using cURL
-
-**Send a message:**
+#### Gửi text (JSON)
 
 ```bash
 curl -X POST http://localhost:5000/api/messages \
   -H "Content-Type: application/json" \
-  -d '{"userMessage": "Hello", "sessionId": "test_session_1"}'
+  -d "{\"content\":\"Xin chao backend\"}"
 ```
 
-**Get chat history:**
+#### Gửi kèm file (multipart/form-data)
 
 ```bash
-curl -X GET "http://localhost:5000/api/messages?sessionId=test_session_1"
+curl -X POST http://localhost:5000/api/messages \
+  -F "content=Hay tom tat file nay" \
+  -F "file=@C:/path/to/your-file.pdf"
 ```
 
-### Using Postman
+### 5.3 Lấy lịch sử chat
 
-1. Create a new POST request to `http://localhost:5000/api/messages`
-2. Set Headers: `Content-Type: application/json`
-3. Set Body (raw JSON):
+- `GET /api/messages?limit=50&skip=0`
 
-```json
-{
-  "userMessage": "Hello, how are you?",
-  "sessionId": "test_session_1"
-}
+Ví dụ:
+
+```bash
+curl "http://localhost:5000/api/messages?limit=20&skip=0"
 ```
 
-4. Send the request
+## 6. Giới hạn upload hiện tại
 
-## License
+- Tối đa `5` file/request
+- Tối đa `10MB`/file
+- Hỗ trợ:
 
-MIT
+1. `image/*`
+2. `audio/*`
+3. `video/*`
+4. `application/pdf`
+5. `text/plain`
+6. `text/markdown`
+7. `text/csv`
+8. `application/json`
+9. `application/xml`
+10. `text/xml`
+11. `text/yaml`
+12. `application/x-yaml`
+
+## 7. Troubleshooting nhanh
+
+### Không kết nối được MongoDB
+
+- Kiểm tra `MONGODB_URI`
+- Nếu local, đảm bảo MongoDB đang chạy
+
+### Lỗi Gemini
+
+- Kiểm tra `GEMINI_API_KEY`
+- Kiểm tra quota/rate limit của key
+
+### Lỗi upload file lên Cloudinary
+
+- Kiểm tra `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+- Đảm bảo file đúng định dạng được hỗ trợ
+
+### Cổng 5000 đã bị chiếm
+
+Đổi `PORT` trong `.env`, ví dụ:
+
+```env
+PORT=3000
+```
