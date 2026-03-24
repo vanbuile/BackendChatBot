@@ -169,30 +169,79 @@ router.post("/", (req, res) => {
 // GET /api/messages - Lấy lịch sử trò chuyện cho phiên mặc định
 router.get("/", async (req, res) => {
   try {
-    const { limit = 50, skip = 0 } = req.query;
-    const parsedLimit = Number.parseInt(limit, 10) || 50;
-    const parsedSkip = Number.parseInt(skip, 10) || 0;
+    const DEFAULT_TOTAL_LIMIT = 6;
+    const MAX_TOTAL_LIMIT = 20;
 
-    // Lấy tin nhắn từ database
-    const messages = await Message.find({ sessionId: SINGLE_SESSION_ID })
-      .sort({ timestamp: -1 })
-      .limit(parsedLimit)
-      .skip(parsedSkip);
+    const rawLimit = Number.parseInt(req.query.limit, 10);
+    const parsedLimit = Number.isNaN(rawLimit)
+      ? DEFAULT_TOTAL_LIMIT
+      : Math.min(Math.max(rawLimit, 1), MAX_TOTAL_LIMIT);
+    const requestedPerRole = Math.floor(parsedLimit / 2);
+    const perRoleQuota = requestedPerRole > 0 ? requestedPerRole : 1;
 
-    // Lấy tổng số tin nhắn
+    const beforeParam =
+      typeof req.query.before === "string" ? req.query.before : "";
+    const beforeDate = beforeParam ? new Date(beforeParam) : null;
+    const hasValidBeforeDate =
+      beforeDate instanceof Date && !Number.isNaN(beforeDate.getTime());
+
+    const baseFilter = { sessionId: SINGLE_SESSION_ID };
+    const timestampFilter = hasValidBeforeDate
+      ? { timestamp: { $lt: beforeDate } }
+      : {};
+
+    // Lấy cân bằng theo vai trò để luôn ưu tiên 3 user + 3 assistant khi có đủ dữ liệu.
+    const [userMessages, assistantMessages] = await Promise.all([
+      Message.find({
+        ...baseFilter,
+        ...timestampFilter,
+        role: "user",
+      })
+        .sort({ timestamp: -1 })
+        .limit(perRoleQuota),
+      Message.find({
+        ...baseFilter,
+        ...timestampFilter,
+        role: "assistant",
+      })
+        .sort({ timestamp: -1 })
+        .limit(perRoleQuota),
+    ]);
+
+    const messages = [...userMessages, ...assistantMessages]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, parsedLimit)
+      .reverse();
+
+    // Lấy tổng số tin nhắn cho phiên hiện tại
     const total = await Message.countDocuments({
       sessionId: SINGLE_SESSION_ID,
     });
+
+    const returnedCount = messages.length;
+    const oldestTimestamp = returnedCount > 0 ? messages[0].timestamp : null;
+
+    let hasMore = false;
+    if (oldestTimestamp) {
+      const olderCount = await Message.countDocuments({
+        sessionId: SINGLE_SESSION_ID,
+        timestamp: { $lt: oldestTimestamp },
+      });
+      hasMore = olderCount > 0;
+    }
 
     res.status(200).json({
       success: true,
       data: {
         sessionId: SINGLE_SESSION_ID,
         total,
-        count: messages.length,
+        count: returnedCount,
         limit: parsedLimit,
-        skip: parsedSkip,
-        messages: messages.reverse(),
+        roleQuota: perRoleQuota,
+        before: hasValidBeforeDate ? beforeDate.toISOString() : null,
+        hasMore,
+        nextBefore: oldestTimestamp ? oldestTimestamp.toISOString() : null,
+        messages,
       },
     });
   } catch (error) {
